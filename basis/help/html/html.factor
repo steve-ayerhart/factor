@@ -67,7 +67,12 @@ M: pathname url-of
         prepend
     ] [ drop f ] if ;
 
-: help-stylesheet ( stylesheet -- xml )
+: prepend-help-viewport ( xml -- xml' )
+    [XML
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+    XML] prepend ;
+
+: help-stylesheet ( assoc -- xml' )
     "vocab:help/html/stylesheet.css" ascii file-contents
     swap "\n" glue [XML <style><-></style> XML] ;
 
@@ -75,14 +80,16 @@ M: pathname url-of
     "conventions" >link topic>filename
     [XML
         <div class="navbar">
-        <b> Factor Documentation </b> |
-        <a href="/">Home</a> |
-        <a href=<->>Glossary</a> |
+        <div><b> Factor Documentation </b></div> |
+        <div><a href="/">Home</a></div> |
+        <div><a href=<->>Glossary</a></div> |
+        <div>
         <form method="get" action="/search" style="display:inline;">
             <input name="search" type="text"/>
             <button type="submit">Search</button>
         </form>
-        <a href="http://factorcode.org" style="float:right; padding: 4px;">factorcode.org</a>
+        </div>
+        <div><a href="http://factorcode.org">factorcode.org</a></div>
         </div>
      XML] ;
 
@@ -120,7 +127,7 @@ M: pathname url-of
     [ article-title " - Factor Documentation" append ]
     [
         [ print-topic ] with-html-writer css-styles-to-classes
-        [ help-stylesheet ] [ help-navbar prepend ] bi*
+        [ help-stylesheet prepend-help-viewport ] [ help-navbar prepend ] bi*
     ] bi simple-page ;
 
 : generate-help-file ( topic -- )

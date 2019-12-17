@@ -1,12 +1,29 @@
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+}
+@media (max-width: 35em) {
+  :root {
+    //font-size: 5.125em;
+  }
+}
+@media (min-width: 50em) {
+}
 a:link { text-decoration: none; color: #104e8b; }
 a:visited { text-decoration: none; color: #104e8b; }
 a:active { text-decoration: none; color: #104e8b; }
 a:hover { text-decoration: underline; color: #104e8b; }
 
 .navbar {
-    background-color: #f3f2ea;
-    padding: 5px;
-    border: 1px solid #ccc;
-    font: 9pt sans-serif;
-    margin-bottom: 10px;
+  display: flex;
+  align-items: baseline;
+  background-color: #f3f2ea;
+  padding: 5px;
+  border: 1px solid #ccc;
+  font: 9pt sans-serif;
+  margin-bottom: 10px;
 }
+
+.navbar div:last-child {
+  margin-left: auto;
+  padding: 4px;
+}
+

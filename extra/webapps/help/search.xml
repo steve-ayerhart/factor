@@ -32,7 +32,7 @@
     </head>
 
     <body>
-		<t:html t:name="navbar"/>
+        <t:html t:name="navbar"/>
 
         <t:if t:value="articles">
             <h2>Articles</h2>
