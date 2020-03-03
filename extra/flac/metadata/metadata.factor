@@ -140,7 +140,7 @@ TUPLE: metadata
     bitstreams:<msb0-bit-reader> (parse-metadata-block-header) ;
 
 : read-metadata-block-header ( -- header )
-    4 read parse-metadata-block-header dup . ;
+    4 read parse-metadata-block-header ;
 
 :: (parse-stream-info) ( bitstream -- stream-info )
     [
@@ -259,9 +259,3 @@ PRIVATE>
 
 : <flac-metadata> ( filename -- metadata )
     read-metadata ;
-
-:: write-something ( bitstream -- header )
-    1 1 bitstream bitstreams:poke
-    1 7 bitstream bitstreams:poke
-        34 24 bitstream bitstreams:poke
-    bitstream bitstreams:bit-writer-bytes ;
