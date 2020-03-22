@@ -125,10 +125,10 @@ TUPLE: metadata
 
 <PRIVATE
 
-: read-flac-magic ( -- magic )
+: read-flac-magic ( -- ? )
     4 read utf8 decode FLAC-MAGIC = ;
 
-:: (parse-metadata-block-header) ( bitstream -- header )
+:: (decode-metadata-block-header) ( bitstream -- header )
     [
         1 bitstream read-bit 1 =
         7 bitstream read-bit <metadata-type>
@@ -136,13 +136,13 @@ TUPLE: metadata
     ] with-big-endian
     metadata-block-header boa ;
 
-: parse-metadata-block-header ( byte-array -- header )
-    bitstreams:<msb0-bit-reader> (parse-metadata-block-header) ;
+: decode-metadata-block-header ( byte-array -- header )
+    bitstreams:<msb0-bit-reader> (decode-metadata-block-header) ;
 
 : read-metadata-block-header ( -- header )
-    4 read parse-metadata-block-header ;
+    4 read decode-metadata-block-header ;
 
-:: (parse-stream-info) ( bitstream -- stream-info )
+:: (decode-stream-info) ( bitstream -- stream-info )
     [
         16 bitstream read-bit
         16 bitstream read-bit
@@ -156,10 +156,10 @@ TUPLE: metadata
     ] with-big-endian
     stream-info boa ;
 
-: parse-stream-info ( byte-array -- stream-info )
-    bitstreams:<msb0-bit-reader> (parse-stream-info) ;
+: decode-stream-info ( byte-array -- stream-info )
+    bitstreams:<msb0-bit-reader> (decode-stream-info) ;
 
-: parse-seek-table ( byte-array -- seek-table )
+: decode-seek-table ( byte-array -- seek-table )
     dup
     binary
     [
@@ -168,7 +168,7 @@ TUPLE: metadata
     ] with-byte-reader
     seek-table boa ;
 
-: parse-vorbis-comment ( byte-array -- comments )
+: decode-vorbis-comment ( byte-array -- comments )
     binary
     [
         4 read le> read utf8 decode
@@ -179,13 +179,31 @@ TUPLE: metadata
         ] map
     ] with-byte-reader >alist vorbis-comment boa ;
 
-: parse-padding ( byte-array -- padding )
+: encode-vorbis-string ( str -- byte-array )
+    dup binary [ length 4 >le write utf8 encode write ] with-byte-writer ;
+
+: encode-vorbis-comments ( assoc -- byte-array )
+    dup binary [
+        length 4 >le write
+        [ 2array "=" join encode-vorbis-string write ] assoc-each
+    ] with-byte-writer ;
+
+: encode-vorbis-comment ( vorbis-comment -- byte-array )
+    binary [
+        [ vendor-string>> encode-vorbis-string write ]
+        [ comments>> encode-vorbis-comments write ] bi
+    ] with-byte-writer ;
+
+: encode-padding ( padding -- byte-array )
+    length>> <byte-array> ;
+
+: decode-padding ( byte-array -- padding )
     length padding boa ;
 
-: parse-application ( byte-array -- application )
+: decode-application ( byte-array -- application )
     drop application new ;
 
-: parse-cuesheet ( byte-array -- cuesheet )
+: decode-cuesheet ( byte-array -- cuesheet )
     binary
     [
          128 read ascii decode
@@ -208,7 +226,7 @@ TUPLE: metadata
         ] map
     ] with-byte-reader cuesheet boa ;
 
-: parse-picture ( byte-array -- picture )
+: decode-picture ( byte-array -- picture )
     binary
     [
         4 read be> <picture-type>
@@ -221,22 +239,22 @@ TUPLE: metadata
         4 read be> read
     ] with-byte-reader picture boa ;
 
-: read-metadata-block ( metadata byte-array type -- metadata )
+: decode-metadata-block ( metadata byte-array type -- metadata )
     {
-        { metadata-stream-info [ parse-stream-info >>stream-info ] }
-        { metadata-padding [ parse-padding >>padding ] }
-        { metadata-application [ parse-application >>application ] }
-        { metadata-seek-table [ parse-seek-table >>seek-table ] }
-        { metadata-vorbis-comment [ parse-vorbis-comment >>vorbis-comment ] }
-        { metadata-cuesheet [ parse-cuesheet >>cuesheet ] }
-        { metadata-picture [ parse-picture >>picture ] }
+        { metadata-stream-info [ decode-stream-info >>stream-info ] }
+        { metadata-padding [ decode-padding >>padding ] }
+        { metadata-application [ decode-application >>application ] }
+        { metadata-seek-table [ decode-seek-table >>seek-table ] }
+        { metadata-vorbis-comment [ decode-vorbis-comment >>vorbis-comment ] }
+        { metadata-cuesheet [ decode-cuesheet >>cuesheet ] }
+        { metadata-picture [ decode-picture >>picture ] }
     } case ;
 
 PRIVATE>
 
 : read-stream-info ( -- stream-info )
     read-metadata-block-header
-    length>> read bitstreams:<msb0-bit-reader> parse-stream-info ;
+    length>> read decode-stream-info ;
 
 : skip-metadata ( -- )
     [
@@ -253,7 +271,7 @@ PRIVATE>
         [
             read-metadata-block-header
             [ length>> read ] [ type>> ] [ last?>> not ] tri
-            [ read-metadata-block ] dip
+            [ decode-metadata-block ] dip
         ] loop
     ] with-file-reader ;
 
