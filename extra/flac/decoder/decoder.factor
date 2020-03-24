@@ -1,6 +1,6 @@
 ! Copyright (C) 2020 .
 ! See http://factorcode.org/license.txt for BSD license.
-USING: alien.syntax math io.encodings.binary kernel io io.files locals endian bit-arrays math.intervals combinators math.order sequences io.streams.peek io.binary namespaces accessors ;
+USING: alien.syntax math io.encodings.binary kernel io io.files locals endian bit-arrays math.intervals combinators math.order sequences io.streams.peek io.binary namespaces accessors byte-arrays ;
 USING: prettyprint ;
 USING: flac.metadata.private flac.metadata ;
 
@@ -16,6 +16,8 @@ ERROR: sync-code-error ;
 ERROR: invalid-channel-assignment ;
 ERROR: reserved-block-size ;
 ERROR: invalid-sample-rate ;
+ERROR: invalid-subframe-type ;
+ERROR: invalid-subframe-sync ;
 
 ENUM: flac-channel-assignment
     channels-mono
@@ -44,11 +46,13 @@ ENUM: flac-entropy-coding-method
     entropy-coding-partioned-rice
     entropy-coding-partioned-rice2 ;
 
-TUPLE: subframe
+TUPLE: flac-subframe
     { type maybe{ subframe-type-constant
                   subframe-type-verbatim
                   subframe-type-fixed
-                  subframe-type-lpc } } ;
+                  subframe-type-lpc } }
+    { wasted-bits integer }
+    { data byte-array } ;
 
 TUPLE: frame-header
     { number-type maybe{ frame-number-type-frame frame-number-type-sample } }
@@ -73,6 +77,11 @@ TUPLE: frame-header
 TUPLE: frame-footer
     { crc integer } ;
 
+TUPLE: flac-frame
+    { header frame-header }
+    { subframes sequence }
+    { footer frame-footer } ;
+
 : 0xxxxxxx? ( n -- ? ) 0x80 bitand 0x80 = not ;
 : 110xxxxx? ( n -- ? ) dup [ 0xc0 bitand 0xc0 = ] [ 0x20 bitand 0x20 = not ] bi* and ;
 : 1110xxxx? ( n -- ? ) dup [ 0xe0 bitand 0xe0 = ] [ 0x10 bitand 0x10 = not ] bi* and ;
@@ -81,27 +90,25 @@ TUPLE: frame-footer
 : 1111110x? ( n -- ? ) dup [ 0xfc bitand 0xfc = ] [ 0x02 bitand 0x02 = not ] bi* and ;
 : 11111110? ( n -- ? ) dup [ 0xfe bitand 0xfe = ] [ 0x01 bitand 0x01 = not ] bi* and ;
 
-: remaining-bytes ( n -- n )
+:: remaining-bytes ( n -- n )
     {
-        { [ dup 110xxxxx? ] [ drop 1 ] }
-        { [ dup 1110xxxx? ] [ drop 2 ] }
-        { [ dup 11110xxx? ] [ drop 3 ] }
-        { [ dup 111110xx? ] [ drop 4 ] }
-        { [ dup 1111110x? ] [ drop 5 ] }
-        { [ dup 11111110? ] [ drop 6 ] }
+        { [ n 110xxxxx? ] [ 1 ] }
+        { [ n 1110xxxx? ] [ 2 ] }
+        { [ n 11110xxx? ] [ 3 ] }
+        { [ n 111110xx? ] [ 4 ] }
+        { [ n 1111110x? ] [ 5 ] }
+        { [ n 11111110? ] [ 6 ] }
     } cond ;
 
-! : frame-bytes ( byte-array -- n )
-!     bitstreams:<msb0-bit-reader>
-!     0
+! : remaining-bytes ( n -- n )
 !     {
-!         { 0b00000000 [ 1 ] }
-!         { 0b11000000 [ 2 ] }
-!         { 0b11100000 [ 3 ] }
-!         { 0b11110000 [ 4 ] }
-!         { 0b11111000 [ 5 ] }
-!         { 0b11111100 [ 6 ] }
-!     } case ;
+!         { [ dup 110xxxxx? ] [ drop 1 ] }
+!         { [ dup 1110xxxx? ] [ drop 2 ] }
+!         { [ dup 11110xxx? ] [ drop 3 ] }
+!         { [ dup 111110xx? ] [ drop 4 ] }
+!         { [ dup 1111110x? ] [ drop 5 ] }
+!         { [ dup 11111110? ] [ drop 6 ] }
+!     } cond ;
 
 :: decode-utf8-uint ( frame-length bitstream -- n )
     frame-length 7 -
@@ -196,14 +203,40 @@ TUPLE: frame-footer
     ] with-big-endian
     frame-header boa ;
 
+:: decode-subframe-type ( n -- type )
+    {
+        { [ n 0 = ] [ 0 ] }
+        { [ n 1 = ] [ 1 ] }
+        { [ n 8 >= n 12 <= and ] [ 2 ] }
+        { [ n 32 >= ] [ 3 ] }
+        [ invalid-subframe-type ]
+    } cond <flac-subframe-type> ;
+
+:: decode-subframe ( bitstream -- subframe )
+    1 bitstream read-bit 1 = [ invalid-subframe-sync ] when
+    6 bitstream read-bit decode-subframe-type
+    1 bitstream read-bit ! TODO: wasted-bits: 0 for now..
+    B{ }
+    flac-subframe boa ;
+
+
+! TODO: actually decode based on subframe type
+! TODO: handle wasted bits assuming 1 byte for now :/
 : read-subframe ( frame-header channel -- subframe )
-   drop drop -9 ;
+    drop drop
+   1 read bitstreams:<msb0-bit-reader> decode-subframe ;
 
 : read-subframes ( frame-header -- seq )
     dup channels>> swap <repetition> [ read-subframe ] map-index ;
 
 : read-frame-header ( -- frame-header )
     4 read bitstreams:<msb0-bit-reader> decode-header ;
+
+: read-frame ( -- frame )
+    read-frame-header
+    dup read-subframes
+    frame-footer new
+    flac-frame boa ;
 
 : decode-file ( filename -- something )
     binary
@@ -212,6 +245,6 @@ TUPLE: frame-footer
         read-stream-info .
         skip-metadata
 !        51448296 seek-absolute seek-input
-        read-frame-header
+        read-frame
         contents .
     ] with-file-reader ;
