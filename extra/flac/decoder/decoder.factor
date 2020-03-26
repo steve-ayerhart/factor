@@ -46,15 +46,18 @@ ENUM: flac-entropy-coding-method
     entropy-coding-partioned-rice
     entropy-coding-partioned-rice2 ;
 
-TUPLE: flac-subframe
-    { type maybe{ subframe-type-constant
+TUPLE: flac-subframe-header
+    { subframe-type maybe{ subframe-type-constant
                   subframe-type-verbatim
                   subframe-type-fixed
                   subframe-type-lpc } }
-    { wasted-bits integer }
+    { wasted-bits integer } ;
+
+TUPLE: flac-subframe
+    { subframe-header flac-subframe-header }
     { data byte-array } ;
 
-TUPLE: frame-header
+TUPLE: flac-frame-header
     { number-type maybe{ frame-number-type-frame frame-number-type-sample } }
     { blocksize integer }
     { sample-rate integer }
@@ -74,13 +77,13 @@ TUPLE: frame-header
     { frame|sample-number integer }
     { crc integer } ;
 
-TUPLE: frame-footer
+TUPLE: flac-frame-footer
     { crc integer } ;
 
 TUPLE: flac-frame
-    { header frame-header }
+    { header flac-frame-header }
     { subframes sequence }
-    { footer frame-footer } ;
+    { footer flac-frame-footer } ;
 
 : 0xxxxxxx? ( n -- ? ) 0x80 bitand 0x80 = not ;
 : 110xxxxx? ( n -- ? ) dup [ 0xc0 bitand 0xc0 = ] [ 0x20 bitand 0x20 = not ] bi* and ;
@@ -99,16 +102,6 @@ TUPLE: flac-frame
         { [ n 1111110x? ] [ 5 ] }
         { [ n 11111110? ] [ 6 ] }
     } cond ;
-
-! : remaining-bytes ( n -- n )
-!     {
-!         { [ dup 110xxxxx? ] [ drop 1 ] }
-!         { [ dup 1110xxxx? ] [ drop 2 ] }
-!         { [ dup 11110xxx? ] [ drop 3 ] }
-!         { [ dup 111110xx? ] [ drop 4 ] }
-!         { [ dup 1111110x? ] [ drop 5 ] }
-!         { [ dup 11111110? ] [ drop 6 ] }
-!     } cond ;
 
 :: decode-utf8-uint ( frame-length bitstream -- n )
     frame-length 7 -
@@ -201,7 +194,7 @@ TUPLE: flac-frame
         ] dip
         1 read be>
     ] with-big-endian
-    frame-header boa ;
+    flac-frame-header boa ;
 
 :: decode-subframe-type ( n -- type )
     {
@@ -212,30 +205,43 @@ TUPLE: flac-frame
         [ invalid-subframe-type ]
     } cond <flac-subframe-type> ;
 
-:: decode-subframe ( bitstream -- subframe )
+
+: read-constant-subframe ( bps -- data )
+    8 / read ;
+
+
+:: decode-subframe-header ( bitstream -- subframe )
     1 bitstream read-bit 1 = [ invalid-subframe-sync ] when
     6 bitstream read-bit decode-subframe-type
     1 bitstream read-bit ! TODO: wasted-bits: 0 for now..
-    B{ }
-    flac-subframe boa ;
-
+    flac-subframe-header boa ;
 
 ! TODO: actually decode based on subframe type
 ! TODO: handle wasted bits assuming 1 byte for now :/
-: read-subframe ( frame-header channel -- subframe )
-    drop drop
-   1 read bitstreams:<msb0-bit-reader> decode-subframe ;
+: read-subframe ( frame-header -- subframe )
+    1 read bitstreams:<msb0-bit-reader> decode-subframe-header dup
+    subframe-type>>
+    {
+        { subframe-type-constant [ swap bits-per-sample>> read-constant-subframe ] }
+        { subframe-type-verbatim [ drop "VERBATIM TODO" . B{ } ] }
+        { subframe-type-fixed [ drop "FIXED TODO" . B{ } ] }
+        { subframe-type-lpc [ drop "LPC TODO" . B{ } ] }
+    } case 
+    flac-subframe boa ;
 
 : read-subframes ( frame-header -- seq )
-    dup channels>> swap <repetition> [ read-subframe ] map-index ;
+    dup channels>> swap <repetition> [ read-subframe ] map ;
 
 : read-frame-header ( -- frame-header )
     4 read bitstreams:<msb0-bit-reader> decode-header ;
 
+: read-frame-footer ( -- frame-footer )
+    2 read be> flac-frame-footer boa ;
+
 : read-frame ( -- frame )
     read-frame-header
     dup read-subframes
-    frame-footer new
+    read-frame-footer
     flac-frame boa ;
 
 : decode-file ( filename -- something )
@@ -245,6 +251,5 @@ TUPLE: flac-frame
         read-stream-info .
         skip-metadata
 !        51448296 seek-absolute seek-input
-        read-frame
-        contents .
+        3 <iota> [ drop read-frame ] map
     ] with-file-reader ;
