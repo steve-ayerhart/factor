@@ -1,8 +1,8 @@
 ! Copyright (C) 2020 .
 ! See http://factorcode.org/license.txt for BSD license.
-USING: alien.syntax math io.encodings.binary kernel io io.files locals endian bit-arrays math.intervals combinators math.order sequences io.streams.peek io.binary namespaces accessors byte-arrays ;
+USING: math io.encodings.binary kernel io io.files locals endian bit-arrays math.intervals combinators math.order sequences io.streams.peek io.binary namespaces accessors byte-arrays ;
 USING: prettyprint ;
-USING: flac.metadata.private flac.metadata ;
+USING: flac.metadata.private flac.metadata flac.format ;
 
 QUALIFIED: bitstreams
 
@@ -18,72 +18,6 @@ ERROR: reserved-block-size ;
 ERROR: invalid-sample-rate ;
 ERROR: invalid-subframe-type ;
 ERROR: invalid-subframe-sync ;
-
-ENUM: flac-channel-assignment
-    channels-mono
-    channels-left/right
-    channels-left/right/center
-    channels-left/right/left-surround/right-surround
-    channels-left/right/center/left-surround/right-surround
-    channels-left/right/center/lfe/left-surround/right-surround
-    channels-left/right/center/lfe/center-surround/side-left/side-right
-    channels-left/right/center/lfe/left-surround/right-surround/side-left/side-right
-    channels-left
-    channels-right
-    channels-mid ;
-
-ENUM: flac-frame-number-type
-    frame-number-type-frame
-    frame-number-type-sample ;
-
-ENUM: flac-subframe-type
-    subframe-type-constant
-    subframe-type-verbatim
-    subframe-type-fixed
-    subframe-type-lpc ;
-
-ENUM: flac-entropy-coding-method
-    entropy-coding-partioned-rice
-    entropy-coding-partioned-rice2 ;
-
-TUPLE: flac-subframe-header
-    { subframe-type maybe{ subframe-type-constant
-                  subframe-type-verbatim
-                  subframe-type-fixed
-                  subframe-type-lpc } }
-    { wasted-bits integer } ;
-
-TUPLE: flac-subframe
-    { subframe-header flac-subframe-header }
-    { data byte-array } ;
-
-TUPLE: flac-frame-header
-    { number-type maybe{ frame-number-type-frame frame-number-type-sample } }
-    { blocksize integer }
-    { sample-rate integer }
-    { channels integer }
-    { channel-assignment maybe{ channels-mono
-                                channels-left/right
-                                channels-left/right/center
-                                channels-left/right/left-surround/right-surround
-                                channels-left/right/center/left-surround/right-surround
-                                channels-left/right/center/lfe/left-surround/right-surround
-                                channels-left/right/center/lfe/center-surround/side-left/side-right
-                                channels-left/right/center/lfe/left-surround/right-surround/side-left/side-right
-                                channels-left
-                                channels-right
-                                channels-mid } }
-    { bits-per-sample integer }
-    { frame|sample-number integer }
-    { crc integer } ;
-
-TUPLE: flac-frame-footer
-    { crc integer } ;
-
-TUPLE: flac-frame
-    { header flac-frame-header }
-    { subframes sequence }
-    { footer flac-frame-footer } ;
 
 : 0xxxxxxx? ( n -- ? ) 0x80 bitand 0x80 = not ;
 : 110xxxxx? ( n -- ? ) dup [ 0xc0 bitand 0xc0 = ] [ 0x20 bitand 0x20 = not ] bi* and ;
