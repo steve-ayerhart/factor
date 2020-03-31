@@ -140,9 +140,14 @@ ERROR: invalid-subframe-sync ;
     } cond <flac-subframe-type> ;
 
 
-: read-constant-subframe ( bps -- data )
-    8 / read ;
+: read-constant-subframe ( subframe-header frame-header -- data )
+    >>bits-per-sample 8 / read swap drop ;
 
+: read-fixed-subframe ( predictive-order -- subframe )
+    drop 9 ;
+
+: read-lpc-subframe ( predictive-order -- subframe )
+    drop 9 ;
 
 :: decode-subframe-header ( bitstream -- subframe )
     1 bitstream read-bit 1 = [ invalid-subframe-sync ] when
@@ -153,14 +158,16 @@ ERROR: invalid-subframe-sync ;
 ! TODO: actually decode based on subframe type
 ! TODO: handle wasted bits assuming 1 byte for now :/
 : read-subframe ( frame-header -- subframe )
-    1 read bitstreams:<msb0-bit-reader> decode-subframe-header dup
+    [
+        1 read bitstreams:<msb0-bit-reader> decode-subframe-header dup
+    ] dip swap
     subframe-type>>
     {
-        { subframe-type-constant [ swap bits-per-sample>> read-constant-subframe ] }
-        { subframe-type-verbatim [ drop "VERBATIM TODO" . B{ } ] }
-        { subframe-type-fixed [ drop "FIXED TODO" . B{ } ] }
-        { subframe-type-lpc [ drop "LPC TODO" . B{ } ] }
-    } case 
+        { subframe-type-constant [ "1" ] }
+        { subframe-type-verbatim [ drop drop B{ } ] }
+        { subframe-type-fixed [ drop drop B{ } ] }
+        { subframe-type-lpc [ drop drop B{ } ] }
+    } case
     flac-subframe boa ;
 
 : read-subframes ( frame-header -- seq )
@@ -178,7 +185,7 @@ ERROR: invalid-subframe-sync ;
     read-frame-footer
     flac-frame boa ;
 
-: decode-file ( filename -- something )
+: read-flac-file ( filename -- something )
     binary
     [
         read-flac-magic [ not-a-flac-file ] unless

@@ -4,6 +4,20 @@ USING: alien.syntax math byte-arrays sequences ;
 
 IN: flac.format
 
+CONSTANT: MIN-BLOCK-SIZE 16
+CONSTANT: MAX-BLOCK-SIZE 65535
+CONSTANT: MAX-SAMPLE-SIZE: 4608
+CONSTANT: MAX-CHANNELS 8
+CONSTANT: MIN-BITS-PER-SAMPLE 4
+CONSTANT: MAX-BITS-PER-SAMPLE 32 ! The value is ((2^16) - 1) * 10
+CONSTANT: MAX-LPC-ORDER 32
+CONSTANT: MAX-LPC-ORDER-48000HZ 12
+CONSTANT: MIN-QLP-COEFF-PRECISION 5
+CONSTANT: MAX-QLP-COEEF-PRECISION 15
+CONSTANT: MAX-FIXED-ORDER 4
+CONSTANT: MAX-RICE-PARTITION-ORDER 15
+
+
 ENUM: flac-frame-number-type
     frame-number-type-frame
     frame-number-type-sample ;
@@ -62,6 +76,26 @@ TUPLE: flac-subframe
 ENUM: flac-entropy-coding-method
     entropy-coding-partioned-rice
     entropy-coding-partioned-rice2 ;
+
+TUPLE: partition
+    { encoding-parameter integer }
+    { partitions sequence } ;
+
+TUPLE: residual
+    method
+    { partition partition }
+
+TUPLE: subframe-constant
+    { value integer } ;
+
+TUPLE: subframe-verbatim
+    { data byte-array } ;
+
+TUPLE: subframe-fixed
+     entropy-coding-method
+    { order integer }
+    { warmup integer }
+    residual ;
 
 TUPLE: flac-frame-footer
     { crc integer } ;
