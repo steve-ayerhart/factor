@@ -1,6 +1,6 @@
 ! Copyright (C) 2020 .
 ! See http://factorcode.org/license.txt for BSD license.
-USING: math io.encodings.binary kernel io io.files locals endian bit-arrays math.intervals combinators math.order sequences io.streams.peek io.binary namespaces accessors byte-arrays ;
+USING: math io.encodings.binary kernel io io.files locals endian bit-arrays math.intervals combinators combinators.extras math.order sequences io.streams.peek io.binary namespaces accessors byte-arrays math.bitwise ;
 USING: prettyprint ;
 USING: flac.metadata.private flac.metadata flac.format ;
 
@@ -19,29 +19,28 @@ ERROR: invalid-sample-rate ;
 ERROR: invalid-subframe-type ;
 ERROR: invalid-subframe-sync ;
 
-: 0xxxxxxx? ( n -- ? ) 0x80 bitand 0x80 = not ;
-: 110xxxxx? ( n -- ? ) dup [ 0xc0 bitand 0xc0 = ] [ 0x20 bitand 0x20 = not ] bi* and ;
-: 1110xxxx? ( n -- ? ) dup [ 0xe0 bitand 0xe0 = ] [ 0x10 bitand 0x10 = not ] bi* and ;
-: 11110xxx? ( n -- ? ) dup [ 0xf0 bitand 0xf0 = ] [ 0x08 bitand 0x08 = not ] bi* and ;
-: 111110xx? ( n -- ? ) dup [ 0xf8 bitand 0xf8 = ] [ 0x04 bitand 0x04 = not ] bi* and ;
-: 1111110x? ( n -- ? ) dup [ 0xfc bitand 0xfc = ] [ 0x02 bitand 0x02 = not ] bi* and ;
-: 11111110? ( n -- ? ) dup [ 0xfe bitand 0xfe = ] [ 0x01 bitand 0x01 = not ] bi* and ;
+: 0xxxxxxx? ( n -- ? ) 0x80 mask? = not ;
+: 110xxxxx? ( n -- ? ) [ 0xc0 mask? ] [ 0x20 mask? not ] bi and ;
+: 1110xxxx? ( n -- ? ) [ 0xe0 mask? ] [ 0x10 mask? not ] bi and ;
+: 11110xxx? ( n -- ? ) [ 0xf0 mask? ] [ 0x08 mask? not ] bi and ;
+: 111110xx? ( n -- ? ) [ 0xf8 mask? ] [ 0x04 mask? not ] bi and ;
+: 1111110x? ( n -- ? ) [ 0xfc mask? ] [ 0x02 mask? not ] bi and ;
+: 11111110? ( n -- ? ) [ 0xfe mask? ] [ 0x01 mask? not ] bi and ;
 
-:: remaining-bytes ( n -- n )
+: remaining-bytes ( n -- n )
     {
-        { [ n 110xxxxx? ] [ 1 ] }
-        { [ n 1110xxxx? ] [ 2 ] }
-        { [ n 11110xxx? ] [ 3 ] }
-        { [ n 111110xx? ] [ 4 ] }
-        { [ n 1111110x? ] [ 5 ] }
-        { [ n 11111110? ] [ 6 ] }
-    } cond ;
+        { [ 110xxxxx? ] [ 1 ] }
+        { [ 1110xxxx? ] [ 2 ] }
+        { [ 11110xxx? ] [ 3 ] }
+        { [ 111110xx? ] [ 4 ] }
+        { [ 1111110x? ] [ 5 ] }
+        { [ 11111110? ] [ 6 ] }
+    } cond-case ;
 
 :: decode-utf8-uint ( frame-length bitstream -- n )
     frame-length 7 -
     bitstream read-bit
-    frame-length <iota>
-    [
+    frame-length <iota> [
         drop
         2 bitstream read-bit drop
         6 shift 6 bitstream read-bit bitor
@@ -57,13 +56,14 @@ ERROR: invalid-subframe-sync ;
      ] if ;
 
 : decode-block-size ( n -- n )
+    dup
     {
-        { [ dup 0b0000 = ] [ drop reserved-block-size ] }
-        { [ dup 0b0001 = ] [ drop 192 ] }
-        { [ dup 0b0010 0b0101 between? ] [ 2 - 2^ 567 * ] }
-        { [ dup 0b0110 0b0111 between? ] [ ] }
-        { [ dup 0b1000 0b1111 between? ] [ 8 - 2^ 256 * ] }
-    } cond ;
+        { [ 0b0000 = ] [ drop reserved-block-size ] }
+        { [ 0b0001 = ] [ drop 192 ] }
+        { [ 0b0010 0b0101 between? ] [ 2 - 2^ 567 * ] }
+        { [ 0b0110 0b0111 between? ] [ ] }
+        { [ 0b1000 0b1111 between? ] [ 8 - 2^ 256 * ] }
+    } cond-case ;
 
 : decode-bits-per-sample ( n -- n )
     {
