@@ -62,40 +62,58 @@ ENUM: flac-subframe-type
     subframe-type-fixed
     subframe-type-lpc ;
 
+ENUM: flac-entropy-coding-method-type
+    entropy-coding-partioned-rice
+    entropy-coding-partioned-rice2 ;
+
 TUPLE: flac-subframe-header
     { subframe-type maybe{ subframe-type-constant
                            subframe-type-verbatim
                            subframe-type-fixed
                            subframe-type-lpc } }
+    { order maybe{ integer } }
     { wasted-bits integer } ;
+
+TUPLE: flac-entropy-coding-method-partioned-rice-contents
+    { parameters integer }
+    { raw-bits integer }
+    { capacity-by-order integer } ;
+
+TUPLE: flac-entropy-coding-method-partioned-rice
+    { order integer }
+    { contents flac-entropy-coding-method-partioned-rice-contents } ;
+
+TUPLE: flac-entropy-coding-method
+    { type maybe{ entropy-coding-partioned-rice
+                  entropy-coding-partioned-rice2 } }
+    { data flac-entropy-coding-method-partioned-rice } ;
+
+TUPLE: flac-subframe-constant
+    { value integer } ;
+
+TUPLE: flac-subframe-verbatim
+    { data byte-array } ;
+
+TUPLE: flac-subframe-fixed
+    { entropy-coding-method flac-entropy-coding-method }
+    { warmup sequence }
+    residual ;
+
+TUPLE: flac-subframe-lpc
+    { entropy-coding-method maybe{ entropy-coding-partioned-rice
+                                   entropy-coding-partioned-rice2 } }
+    { qlp-coeff-precision integer }
+    { quantization-level integer }
+    { qlp-coeff integer }
+    { warmup integer }
+    residual ;
 
 TUPLE: flac-subframe
     { subframe-header flac-subframe-header }
-    { data byte-array } ;
-
-ENUM: flac-entropy-coding-method
-    entropy-coding-partioned-rice
-    entropy-coding-partioned-rice2 ;
-
-TUPLE: partition
-    { encoding-parameter integer }
-    { partitions sequence } ;
-
-TUPLE: residual
-    method
-    { partition partition }
-
-TUPLE: subframe-constant
-    { value integer } ;
-
-TUPLE: subframe-verbatim
-    { data byte-array } ;
-
-TUPLE: subframe-fixed
-     entropy-coding-method
-    { order integer }
-    { warmup integer }
-    residual ;
+    { data maybe{ flac-subframe-constant
+                  flac-subframe-verbatim
+                  flac-subframe-fixed
+                  flac-subframe-lpc } } ;
 
 TUPLE: flac-frame-footer
     { crc integer } ;

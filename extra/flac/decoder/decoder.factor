@@ -16,10 +16,10 @@ ERROR: sync-code-error ;
 ERROR: invalid-channel-assignment ;
 ERROR: reserved-block-size ;
 ERROR: invalid-sample-rate ;
-ERROR: invalid-subframe-type ;
+ERROR: reserved-subframe-type ;
 ERROR: invalid-subframe-sync ;
 
-: 0xxxxxxx? ( n -- ? ) 0x80 mask? = not ;
+: 0xxxxxxx? ( n -- ? ) 0x80 mask? not ;
 : 110xxxxx? ( n -- ? ) [ 0xc0 mask? ] [ 0x20 mask? not ] bi and ;
 : 1110xxxx? ( n -- ? ) [ 0xe0 mask? ] [ 0x10 mask? not ] bi and ;
 : 11110xxx? ( n -- ? ) [ 0xf0 mask? ] [ 0x08 mask? not ] bi and ;
@@ -50,10 +50,7 @@ ERROR: invalid-subframe-sync ;
      1 read dup
      be> 0xxxxxxx?
      [ be> ]
-     [
-         dup be> remaining-bytes read
-         B{ } append-as be>
-     ] if ;
+     [ dup be> remaining-bytes read B{ } append-as be> ] if ;
 
 : decode-block-size ( n -- n )
     dup
@@ -130,26 +127,31 @@ ERROR: invalid-subframe-sync ;
     ] with-big-endian
     flac-frame-header boa ;
 
-:: decode-subframe-type ( n -- type )
+: decode-subframe-type ( n -- order type )
+    dup
     {
-        { [ n 0 = ] [ 0 ] }
-        { [ n 1 = ] [ 1 ] }
-        { [ n 8 >= n 12 <= and ] [ 2 ] }
-        { [ n 32 >= ] [ 3 ] }
-        [ invalid-subframe-type ]
-    } cond <flac-subframe-type> ;
+        { [ 0 = ] [ drop f 0 ] }
+        { [ 1 = ] [ drop f 1 ] }
+        { [ 8 12 between? ] [ -1 shift 7 bitand 2 ] }
+        { [ 32 63 between? ] [ -1 shift 31 bitand 3 ] }
+        [ drop reserved-subframe-type ]
+    } cond-case <flac-subframe-type> swap ;
 
+: read-residual ( order -- residual )
+    
 
-: read-constant-subframe ( subframe-header frame-header -- data )
-    >>bits-per-sample 8 / read swap drop ;
+: read-constant-subframe ( frame-header subframe-header -- constant-subframe )
+    drop bits-per-sample>> 8 / read be> flac-subframe-constant boa ;
 
-: read-fixed-subframe ( predictive-order -- subframe )
+: read-fixed-subframe ( fame-header subframe-header -- fixed-subframe )
+    order>> swap bits-per-sample>> <repetition> [
+        8 / read be>
+    ] map flac-subframe-fixed new swap >>warmup dup . ;
+
+: read-lpc-subframe ( predictive-order -- lpc-subframe )
     drop 9 ;
 
-: read-lpc-subframe ( predictive-order -- subframe )
-    drop 9 ;
-
-:: decode-subframe-header ( bitstream -- subframe )
+:: decode-subframe-header ( bitstream -- subframe-header )
     1 bitstream read-bit 1 = [ invalid-subframe-sync ] when
     6 bitstream read-bit decode-subframe-type
     1 bitstream read-bit ! TODO: wasted-bits: 0 for now..
@@ -158,20 +160,17 @@ ERROR: invalid-subframe-sync ;
 ! TODO: actually decode based on subframe type
 ! TODO: handle wasted bits assuming 1 byte for now :/
 : read-subframe ( frame-header -- subframe )
+    1 read bitstreams:<msb0-bit-reader> decode-subframe-header dup dup
     [
-        1 read bitstreams:<msb0-bit-reader> decode-subframe-header dup
-    ] dip swap
-    subframe-type>>
-    {
-        { subframe-type-constant [ "1" ] }
-        { subframe-type-verbatim [ drop drop B{ } ] }
-        { subframe-type-fixed [ drop drop B{ } ] }
-        { subframe-type-lpc [ drop drop B{ } ] }
-    } case
-    flac-subframe boa ;
+        subframe-type>>
+        {
+            { subframe-type-constant [ read-constant-subframe ] }
+            { subframe-type-fixed [ read-fixed-subframe ] }
+        } case
+    ] dip swap flac-subframe boa ;
 
 : read-subframes ( frame-header -- seq )
-    dup channels>> swap <repetition> [ read-subframe ] map ;
+    dup channels>> swap <repetition> [ dup . read-subframe ] map ;
 
 : read-frame-header ( -- frame-header )
     4 read bitstreams:<msb0-bit-reader> decode-header ;
@@ -180,8 +179,8 @@ ERROR: invalid-subframe-sync ;
     2 read be> flac-frame-footer boa ;
 
 : read-frame ( -- frame )
-    read-frame-header
-    dup read-subframes
+    read-frame-header dup
+    read-subframes
     read-frame-footer
     flac-frame boa ;
 
@@ -192,5 +191,5 @@ ERROR: invalid-subframe-sync ;
         read-stream-info .
         skip-metadata
 !        51448296 seek-absolute seek-input
-        3 <iota> [ drop read-frame ] map
+        4 <iota> [ drop read-frame ] map
     ] with-file-reader ;
