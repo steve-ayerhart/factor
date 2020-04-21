@@ -64,19 +64,19 @@ ERROR: invalid-subframe-sync ;
 
 : decode-bits-per-sample ( n -- n )
     {
-        { 0b000 [ -99 ] }
+        { 0b000 [ "TODO" ] }
         { 0b001 [ 8 ] }
         { 0b010 [ 12 ] }
-        { 0b011 [ -99 ] }
+        { 0b011 [ "TODO" ] }
         { 0b100 [ 16 ] }
         { 0b101 [ 20 ] }
         { 0b110 [ 24 ] }
-        { 0b111 [ -99 ] }
+        { 0b111 [ "TODO" ] }
     } case ;
 
 : decode-sample-rate ( n -- n )
     {
-        { 0b0000 [ -99 ] }
+        { 0b0000 [ "TODO" ] }
         { 0b0001 [ 88200 ] }
         { 0b0010 [ 17640 ] }
         { 0b0011 [ 19200 ] }
@@ -138,7 +138,7 @@ ERROR: invalid-subframe-sync ;
     } cond-case <flac-subframe-type> swap ;
 
 : read-residual ( order -- residual )
-    
+    drop "TODO" ;
 
 : read-constant-subframe ( frame-header subframe-header -- constant-subframe )
     drop bits-per-sample>> 8 / read be> flac-subframe-constant boa ;
@@ -149,7 +149,7 @@ ERROR: invalid-subframe-sync ;
     ] map flac-subframe-fixed new swap >>warmup dup . ;
 
 : read-lpc-subframe ( predictive-order -- lpc-subframe )
-    drop 9 ;
+    drop "TODO" ;
 
 :: decode-subframe-header ( bitstream -- subframe-header )
     1 bitstream read-bit 1 = [ invalid-subframe-sync ] when
