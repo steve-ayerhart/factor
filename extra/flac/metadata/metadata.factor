@@ -16,31 +16,25 @@ ERROR: cuesheet-index-reserved-must-be-zero ;
     24 flac-read-uint
     metadata-block-header boa ;
 
-:: (decode-stream-info) ( bs -- stream-info )
-    16 bs bitstreams:read
-    16 bs bitstreams:read
-    24 bs bitstreams:read
-    24 bs bitstreams:read
-    20 bs bitstreams:read
-    3 bs bitstreams:read 1 +
-    5 bs bitstreams:read 1 +
-    36 bs bitstreams:read
-    128 bs bitstreams:read 16 >be bytes>hex-string
+: read-metadata-block-stream-info ( -- stream-info )
+    16 flac-read-uint
+    16 flac-read-uint
+    24 flac-read-uint
+    24 flac-read-uint
+    20 flac-read-uint
+    3 flac-read-uint 1 +
+    5 flac-read-uint 1 +
+    36 flac-read-uint
+    128 flac-read-uint 16 >be bytes>hex-string
     stream-info boa ;
 
-: decode-stream-info ( byte-array -- stream-info )
-    bitstreams:<msb0-bit-reader> (decode-stream-info) ;
+: read-metadata-block-seek-table ( length -- seek-table )
+    18 / <iota> [
+        drop 64 flac-read-uint 64 flac-read-uint 16 flac-read-uint seek-point boa
+    ] map seek-table boa ;
 
-: decode-seek-table ( byte-array -- seek-table )
-    dup
-    binary
-    [
-        length 18 / <iota>
-        [ drop 8 io:read be> 8 io:read be> 2 io:read be> seek-point boa ] map
-    ] with-byte-reader
-    seek-table boa ;
-
-: decode-vorbis-comment ( byte-array -- comments )
+: read-metadata-block-vorbis-comment ( length -- vorbis-comment )
+    dup [ 8 * flac-read-uint ] dip >be
     binary
     [
         4 io:read le> io:read utf8 decode
@@ -69,13 +63,14 @@ ERROR: cuesheet-index-reserved-must-be-zero ;
 : encode-padding ( padding -- byte-array )
     length>> <byte-array> ;
 
-: decode-padding ( byte-array -- padding )
-    length flac-padding boa ;
+: read-metadata-block-padding ( length -- padding )
+    dup 8 * flac-read-uint drop flac-padding boa ;
 
-: decode-application ( byte-array -- application )
-    drop application new ;
+: read-metadata-block-application ( length -- application )
+    8 * flac-read-uint drop application new ;
 
-: decode-cuesheet ( byte-array -- cuesheet )
+: read-metadata-block-cuesheet ( length -- cuesheet )
+    dup [ 8 * flac-read-uint ] dip >be
     binary
     [
         128 io:read ascii decode
@@ -98,7 +93,8 @@ ERROR: cuesheet-index-reserved-must-be-zero ;
         ] map
     ] with-byte-reader cuesheet boa ;
 
-: decode-picture ( byte-array -- picture )
+: read-metadata-block-picture ( length -- picture )
+    dup [ 8 * flac-read-uint ] dip >be
     binary
     [
         4 io:read be> <picture-type>
@@ -111,32 +107,24 @@ ERROR: cuesheet-index-reserved-must-be-zero ;
         4 io:read be> io:read
     ] with-byte-reader picture boa ;
 
-: decode-metadata-block ( metadata byte-array type -- metadata )
+: read-metadata-block ( metadata length type -- metadata )
     [
         {
-            { metadata-stream-info [ decode-stream-info >>stream-info ] }
-            { metadata-padding [ decode-padding >>padding ] }
-            { metadata-application [ decode-application >>application ] }
-            { metadata-seek-table [ decode-seek-table >>seek-table ] }
-            { metadata-vorbis-comment [ decode-vorbis-comment >>vorbis-comment ] }
-            { metadata-cuesheet [ decode-cuesheet >>cuesheet ] }
-            { metadata-picture [ decode-picture >>picture ] }
+            { metadata-stream-info [ drop read-metadata-block-stream-info >>stream-info ] }
+            { metadata-padding [ read-metadata-block-padding >>padding ] }
+            { metadata-application [ read-metadata-block-application >>application ] }
+            { metadata-seek-table [ read-metadata-block-seek-table >>seek-table ] }
+            { metadata-vorbis-comment [ read-metadata-block-vorbis-comment >>vorbis-comment ] }
+            { metadata-cuesheet [ read-metadata-block-cuesheet >>cuesheet ] }
+            { metadata-picture [ read-metadata-block-picture >>picture ] }
         } case
     ] with-big-endian ;
 
 : read-flac-metadata ( -- metadata )
     32 flac-read-uint FLAC-MAGIC = [ not-a-flac-file ] unless
     metadata new
-    "HI" .
     [
-        "HI" .
         read-metadata-block-header
-        [ length>> io:read ] [ type>> ] [ last?>> not ] tri
-        [ decode-metadata-block ] dip
+        [ length>> ] [ type>> ] [ last?>> not ] tri
+        [ read-metadata-block ] dip
     ] loop ;
-!     metadata new
-!     [
-!         read-metadata-block-header
-!         [ length>> io:read ] [ type>> ] [ last?>> not ] tri
-!         [ decode-metadata-block ] dip
-!     ] loop ;

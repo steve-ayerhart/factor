@@ -2,20 +2,18 @@
 ! See http://factorcode.org/license.txt for BSD license.
 USING: math io.encodings.binary kernel io io.files locals endian bit-arrays math.intervals combinators combinators.extras math.order sequences namespaces accessors byte-arrays math.bitwise ;
 USING: prettyprint ;
-USING: flac.bitstream flac.metadata.private flac.format ;
+USING: flac.bitstream flac.metadata flac.format ;
 
 IN: flac.decoder
 
 CONSTANT: sync-code 16382
+
 ERROR: sync-code-error ;
 ERROR: invalid-channel-assignment ;
 ERROR: reserved-block-size ;
 ERROR: invalid-sample-rate ;
 ERROR: reserved-subframe-type ;
 ERROR: invalid-subframe-sync ;
-
-: read-flac-magic ( -- ? )
-    32 flac-read-uint FLAC-MAGIC = ;
 
 : 0xxxxxxx? ( n -- ? ) 0x80 mask? not ;
 : 110xxxxx? ( n -- ? ) [ 0xc0 mask? ] [ 0x20 mask? not ] bi and ;
@@ -43,6 +41,14 @@ ERROR: invalid-subframe-sync ;
 !         2 bitstream read-bit drop
 !         6 shift 6 bitstream read-bit bitor
 !     ] each ;
+
+: read-utf8-uint ( -- n )
+    8 flac-read-uint dup
+    [ 0b11000000 <= ]
+    [
+        8 flac-read-uint drop
+        1 shift 0xff bitand
+    ] while ;
 
 ! : read-utf8-uint ( -- n )
 !      1 read dup
@@ -192,7 +198,19 @@ ERROR: invalid-subframe-sync ;
 !         4 <iota> [ drop read-frame ] map
 !     ] with-file-reader ;
 
+: read-flac-frame-header ( -- frame-header )
+    14 flac-read-uint drop
+    1 flac-read-uint drop
+    1 flac-read-uint <flac-frame-number-type>
+    4 flac-read-uint decode-block-size
+    4 flac-read-uint decode-sample-rate
+    4 flac-read-uint decode-channels
+    3 flac-read-uint decode-bits-per-sample
+    1 flac-read-uint drop
+    read-utf8-uint
+    flac-frame-header boa ;
+
 : read-flac-file ( filename -- flac-stream )
     [
-        read-flac-magic [ not-a-flac-file ] unless
+        read-flac-metadata
     ] with-flac-stream-reader ;
