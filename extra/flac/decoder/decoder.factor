@@ -1,15 +1,10 @@
 ! Copyright (C) 2020 .
 ! See http://factorcode.org/license.txt for BSD license.
-USING: math io.encodings.binary kernel io io.files locals endian bit-arrays math.intervals combinators combinators.extras math.order sequences io.streams.peek io.binary namespaces accessors byte-arrays math.bitwise ;
+USING: math io.encodings.binary kernel io io.files locals endian bit-arrays math.intervals combinators combinators.extras math.order sequences namespaces accessors byte-arrays math.bitwise ;
 USING: prettyprint ;
-USING: flac.metadata.private flac.metadata flac.format ;
-
-QUALIFIED: bitstreams
+USING: flac.bitstream flac.metadata.private flac.format ;
 
 IN: flac.decoder
-
-ALIAS: read-bit bitstreams:read
-ALIAS: peek-bits bitstreams:peek
 
 CONSTANT: sync-code 16382
 ERROR: sync-code-error ;
@@ -18,6 +13,9 @@ ERROR: reserved-block-size ;
 ERROR: invalid-sample-rate ;
 ERROR: reserved-subframe-type ;
 ERROR: invalid-subframe-sync ;
+
+: read-flac-magic ( -- ? )
+    32 flac-read-uint FLAC-MAGIC = ;
 
 : 0xxxxxxx? ( n -- ? ) 0x80 mask? not ;
 : 110xxxxx? ( n -- ? ) [ 0xc0 mask? ] [ 0x20 mask? not ] bi and ;
@@ -37,20 +35,20 @@ ERROR: invalid-subframe-sync ;
         { [ 11111110? ] [ 6 ] }
     } cond-case ;
 
-:: decode-utf8-uint ( frame-length bitstream -- n )
-    frame-length 7 -
-    bitstream read-bit
-    frame-length <iota> [
-        drop
-        2 bitstream read-bit drop
-        6 shift 6 bitstream read-bit bitor
-    ] each ;
+! :: decode-utf8-uint ( frame-length bitstream -- n )
+!     frame-length 7 -
+!     bitstream read-bit
+!     frame-length <iota> [
+!         drop
+!         2 bitstream read-bit drop
+!         6 shift 6 bitstream read-bit bitor
+!     ] each ;
 
-: read-utf8-uint ( -- n )
-     1 read dup
-     be> 0xxxxxxx?
-     [ be> ]
-     [ dup be> remaining-bytes read B{ } append-as be> ] if ;
+! : read-utf8-uint ( -- n )
+!      1 read dup
+!      be> 0xxxxxxx?
+!      [ be> ]
+!      [ dup be> remaining-bytes read B{ } append-as be> ] if ;
 
 : decode-block-size ( n -- n )
     dup
@@ -88,9 +86,9 @@ ERROR: invalid-subframe-sync ;
         { 0b1001 [ 44100 ] }
         { 0b1010 [ 48000 ] }
         { 0b1011 [ 96000 ] }
-        { 0b1100 [ 1 read be> 1000 * ] }
-        { 0b1101 [ 2 read be> ] }
-        { 0b1110 [ 2 read be> 10 * ] }
+        { 0b1100 [ 8 flac-read-uint 1000 * ] }
+        { 0b1101 [ 16 flac-read-uint ] }
+        { 0b1110 [ 16 flac-read-uint 10 * ] }
         { 0b1111 [ invalid-sample-rate ] }
     } case ;
 
@@ -103,93 +101,98 @@ ERROR: invalid-subframe-sync ;
     } cond swap
     <flac-channel-assignment> ;
 
-:: decode-header ( bitstream -- frame-header )
-    [
-        14 bitstream read-bit drop ! ignore sync
-        1 bitstream read-bit drop ! reserved
-        1 bitstream read-bit
-        4 bitstream read-bit
-        4 bitstream read-bit
-        4 bitstream read-bit
-        3 bitstream read-bit
-        1 bitstream read-bit drop ! ignore magic sync
-        read-utf8-uint
-        [
-            {
-                [ <flac-frame-number-type> ]
-                [ decode-block-size ]
-                [ decode-sample-rate ]
-                [ decode-channels ]
-                [ decode-bits-per-sample ]
-            } spread
-        ] dip
-        1 read be>
-    ] with-big-endian
-    flac-frame-header boa ;
+! :: decode-header ( bitstream -- frame-header )
+!     [
+!         14 bitstream read-bit drop ! ignore sync
+!         1 bitstream read-bit drop ! reserved
+!         1 bitstream read-bit
+!         4 bitstream read-bit
+!         4 bitstream read-bit
+!         4 bitstream read-bit
+!         3 bitstream read-bit
+!         1 bitstream read-bit drop ! ignore magic sync
+!         read-utf8-uint
+!         [
+!             {
+!                 [ <flac-frame-number-type> ]
+!                 [ decode-block-size ]
+!                 [ decode-sample-rate ]
+!                 [ decode-channels ]
+!                 [ decode-bits-per-sample ]
+!             } spread
+!         ] dip
+!         1 read be>
+!     ] with-big-endian
+!     flac-frame-header boa ;
+! 
+! : decode-subframe-type ( n -- order type )
+!     dup
+!     {
+!         { [ 0 = ] [ drop f 0 ] }
+!         { [ 1 = ] [ drop f 1 ] }
+!         { [ 8 12 between? ] [ -1 shift 7 bitand 2 ] }
+!         { [ 32 63 between? ] [ -1 shift 31 bitand 3 ] }
+!         [ drop reserved-subframe-type ]
+!     } cond-case <flac-subframe-type> swap ;
+! 
+! : read-residual ( order -- residual )
+!     drop "TODO" ;
+! 
+! : read-constant-subframe ( frame-header subframe-header -- constant-subframe )
+!     drop bits-per-sample>> 8 / read be> flac-subframe-constant boa ;
+! 
+! : read-fixed-subframe ( fame-header subframe-header -- fixed-subframe )
+!     order>> swap bits-per-sample>> <repetition> [
+!         8 / read be>
+!     ] map flac-subframe-fixed new swap >>warmup dup . ;
+! 
+! : read-lpc-subframe ( predictive-order -- lpc-subframe )
+!     drop "TODO" ;
+! 
+! :: decode-subframe-header ( bitstream -- subframe-header )
+!     1 bitstream read-bit 1 = [ invalid-subframe-sync ] when
+!     6 bitstream read-bit decode-subframe-type
+!     1 bitstream read-bit ! TODO: wasted-bits: 0 for now..
+!     flac-subframe-header boa ;
+! 
+! ! TODO: actually decode based on subframe type
+! ! TODO: handle wasted bits assuming 1 byte for now :/
+! : read-subframe ( frame-header -- subframe )
+!     1 read bitstreams:<msb0-bit-reader> decode-subframe-header dup dup
+!     [
+!         subframe-type>>
+!         {
+!             { subframe-type-constant [ read-constant-subframe ] }
+!             { subframe-type-fixed [ read-fixed-subframe ] }
+!         } case
+!     ] dip swap flac-subframe boa ;
+! 
+! : read-subframes ( frame-header -- seq )
+!     dup channels>> swap <repetition> [ dup . read-subframe ] map ;
+! 
+! : read-frame-header ( -- frame-header )
+!     4 read bitstreams:<msb0-bit-reader> decode-header ;
+! 
+! : read-frame-footer ( -- frame-footer )
+!     2 read be> flac-frame-footer boa ;
+! 
+! : read-frame ( -- frame )
+!     read-frame-header dup
+!     read-subframes
+!     read-frame-footer
+!     flac-frame boa ;
+! 
+! : read-flac-file ( filename -- something )
+!     binary
+!     [
+!         read-flac-magic [ not-a-flac-file ] unless
+!         read-stream-info .
+!         skip-metadata
+! !        51448296 seek-absolute seek-input
+!         4 <iota> [ drop read-frame ] map
+!     ] with-file-reader ;
 
-: decode-subframe-type ( n -- order type )
-    dup
-    {
-        { [ 0 = ] [ drop f 0 ] }
-        { [ 1 = ] [ drop f 1 ] }
-        { [ 8 12 between? ] [ -1 shift 7 bitand 2 ] }
-        { [ 32 63 between? ] [ -1 shift 31 bitand 3 ] }
-        [ drop reserved-subframe-type ]
-    } cond-case <flac-subframe-type> swap ;
-
-: read-residual ( order -- residual )
-    drop "TODO" ;
-
-: read-constant-subframe ( frame-header subframe-header -- constant-subframe )
-    drop bits-per-sample>> 8 / read be> flac-subframe-constant boa ;
-
-: read-fixed-subframe ( fame-header subframe-header -- fixed-subframe )
-    order>> swap bits-per-sample>> <repetition> [
-        8 / read be>
-    ] map flac-subframe-fixed new swap >>warmup dup . ;
-
-: read-lpc-subframe ( predictive-order -- lpc-subframe )
-    drop "TODO" ;
-
-:: decode-subframe-header ( bitstream -- subframe-header )
-    1 bitstream read-bit 1 = [ invalid-subframe-sync ] when
-    6 bitstream read-bit decode-subframe-type
-    1 bitstream read-bit ! TODO: wasted-bits: 0 for now..
-    flac-subframe-header boa ;
-
-! TODO: actually decode based on subframe type
-! TODO: handle wasted bits assuming 1 byte for now :/
-: read-subframe ( frame-header -- subframe )
-    1 read bitstreams:<msb0-bit-reader> decode-subframe-header dup dup
-    [
-        subframe-type>>
-        {
-            { subframe-type-constant [ read-constant-subframe ] }
-            { subframe-type-fixed [ read-fixed-subframe ] }
-        } case
-    ] dip swap flac-subframe boa ;
-
-: read-subframes ( frame-header -- seq )
-    dup channels>> swap <repetition> [ dup . read-subframe ] map ;
-
-: read-frame-header ( -- frame-header )
-    4 read bitstreams:<msb0-bit-reader> decode-header ;
-
-: read-frame-footer ( -- frame-footer )
-    2 read be> flac-frame-footer boa ;
-
-: read-frame ( -- frame )
-    read-frame-header dup
-    read-subframes
-    read-frame-footer
-    flac-frame boa ;
-
-: read-flac-file ( filename -- something )
-    binary
+: read-flac-file ( filename -- flac-stream )
     [
         read-flac-magic [ not-a-flac-file ] unless
-        read-stream-info .
-        skip-metadata
-!        51448296 seek-absolute seek-input
-        4 <iota> [ drop read-frame ] map
-    ] with-file-reader ;
+    ] with-flac-stream-reader ;
