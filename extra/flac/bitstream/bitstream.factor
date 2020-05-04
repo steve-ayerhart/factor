@@ -30,6 +30,10 @@ M: flac-stream-reader dispose stream>> dispose ;
         dup bytes>> swap [ prepend ] dip swap >>bytes drop
     ] while flac-input-stream get bitstream>> bitstreams:read ;
 
+: flac-read-sint ( n -- n )
+    ! TODO: this isn't rightt
+    dup flac-read-uint dup . dup 1 - neg shift swap shift ;
+
 : with-flac-stream-reader* ( flac-bitstream quot -- )
     flac-input-stream swap with-variable ; inline
 

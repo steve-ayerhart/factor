@@ -6,23 +6,6 @@ USING: flac.bitstream flac.metadata flac.format ;
 
 IN: flac.decoder
 
-CONSTANT: sync-code 16382
-
-ERROR: sync-code-error ;
-ERROR: invalid-channel-assignment ;
-ERROR: reserved-block-size ;
-ERROR: invalid-sample-rate ;
-ERROR: reserved-subframe-type ;
-ERROR: invalid-subframe-sync ;
-
-: 0xxxxxxx? ( n -- ? ) 0x80 mask? not ;
-: 110xxxxx? ( n -- ? ) [ 0xc0 mask? ] [ 0x20 mask? not ] bi and ;
-: 1110xxxx? ( n -- ? ) [ 0xe0 mask? ] [ 0x10 mask? not ] bi and ;
-: 11110xxx? ( n -- ? ) [ 0xf0 mask? ] [ 0x08 mask? not ] bi and ;
-: 111110xx? ( n -- ? ) [ 0xf8 mask? ] [ 0x04 mask? not ] bi and ;
-: 1111110x? ( n -- ? ) [ 0xfc mask? ] [ 0x02 mask? not ] bi and ;
-: 11111110? ( n -- ? ) [ 0xfe mask? ] [ 0x01 mask? not ] bi and ;
-
 : read-utf8-uint ( -- n )
     0 [ 1 flac-read-uint 1 = ] [ 1 + ] while
     dup [ 7 swap - flac-read-uint ] dip
@@ -86,10 +69,27 @@ ERROR: invalid-subframe-sync ;
 : read-flac-subframe-constant ( frame-header subframe-header -- constant-subframe )
     drop bits-per-sample>> flac-read-uint flac-subframe-constant boa ;
 
-: read-flac-subframe-fixed ( frame-header subframe-header -- fixed-subframe )
-    2drop flac-subframe-fixed new ;
+! : read-flac-residuals  ( block-size - seq )
+!     2 flac-read-uint
+!     dup
+!     {
+!         { [ 0 1 between? ] [ <flac-entropy-coding-method> ] }
+!         [ drop reserved-residual-coding ]
+!     } cond-case
+!     4 flac-read-uint
+!     ;
 
-: decode-flac-subframe-type ( n -- order type )
+: read-flac-residuals ( block-size -- seq )
+    ;
+
+: read-flac-subframe-fixed ( frame-header subframe-header -- fixed-subframe )
+    [ [ blocksize>> ] [ bits-per-sample>> ] bi ] dip
+    pre-order>> swap <repetition> [ flac-read-sint ] map ! warm up samples
+    [ read-flac-residuals ] dip
+!   swap read-flac-redisduals
+    flac-subframe-fixed new swap >>warmup swap drop ;
+
+: decode-flac-subframe-type ( n -- type order )
     dup
     {
         { [ 0 = ] [ drop f 0 ] }
@@ -103,7 +103,7 @@ ERROR: invalid-subframe-sync ;
 : read-flac-subframe-header ( -- subframe-header )
     1 flac-read-uint 1 = [ invalid-subframe-sync ] when
     6 flac-read-uint decode-flac-subframe-type
-    1 flac-read-uint ! TODO: handle wasted bits
+    1 flac-read-uint
     flac-subframe-header boa ;
 
 : read-flac-subframe ( frame-header -- subframe )
@@ -142,12 +142,21 @@ ERROR: invalid-subframe-sync ;
     8 flac-read-uint
     flac-frame-header boa ;
 
+: read-flac-frame-footer ( -- frame-footer )
+    16 flac-read-uint flac-frame-footer boa ;
+
 : read-flac-frame ( -- frame )
-    read-flac-frame-header
-    read-flac-subframes ;
+    read-flac-frame-header dup
+    read-flac-subframes
+    read-flac-frame-footer
+    flac-frame boa ;
 
 : read-flac-file ( filename -- flac-stream )
     [
         read-flac-metadata drop
+        read-flac-frame drop
+        read-flac-frame drop
+        read-flac-frame drop
         read-flac-frame
+
     ] with-flac-file-reader ;

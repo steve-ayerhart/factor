@@ -5,6 +5,7 @@ USING: alien.syntax math byte-arrays sequences kernel strings arrays assocs ;
 IN: flac.format
 
 CONSTANT: FLAC-MAGIC 0x664c6143 ! fLaC
+CONSTANT: sync-code 0b11111111111110
 
 CONSTANT: MIN-BLOCK-SIZE 16
 CONSTANT: MAX-BLOCK-SIZE 65535
@@ -20,6 +21,12 @@ CONSTANT: MAX-FIXED-ORDER 4
 CONSTANT: MAX-RICE-PARTITION-ORDER 15
 
 ERROR: not-a-flac-file ;
+ERROR: sync-code-error ;
+ERROR: invalid-channel-assignment ;
+ERROR: reserved-block-size ;
+ERROR: invalid-sample-rate ;
+ERROR: reserved-subframe-type ;
+ERROR: invalid-subframe-sync ;
 
 ENUM: flac-frame-number-type
     frame-number-type-frame
@@ -69,14 +76,6 @@ ENUM: flac-entropy-coding-method-type
     entropy-coding-partioned-rice
     entropy-coding-partioned-rice2 ;
 
-TUPLE: flac-subframe-header
-    { subframe-type maybe{ subframe-type-constant
-                           subframe-type-verbatim
-                           subframe-type-fixed
-                           subframe-type-lpc } }
-    { order maybe{ integer } }
-    { wasted-bits integer } ;
-
 TUPLE: flac-entropy-coding-method-partioned-rice-contents
     { parameters integer }
     { raw-bits integer }
@@ -98,8 +97,8 @@ TUPLE: flac-subframe-verbatim
     { data byte-array } ;
 
 TUPLE: flac-subframe-fixed
-    { entropy-coding-method flac-entropy-coding-method }
     { warmup sequence }
+    { entropy-coding-method flac-entropy-coding-method }
     residual ;
 
 TUPLE: flac-subframe-lpc
@@ -111,8 +110,16 @@ TUPLE: flac-subframe-lpc
     { warmup integer }
     residual ;
 
+TUPLE: flac-subframe-header
+    { subframe-type maybe{ subframe-type-constant
+                           subframe-type-verbatim
+                           subframe-type-fixed
+                           subframe-type-lpc } }
+    { pre-order maybe{ integer } }
+    { wasted-bits integer } ;
+
 TUPLE: flac-subframe
-    { subframe-header flac-subframe-header }
+    { header flac-subframe-header }
     { data maybe{ flac-subframe-constant
                   flac-subframe-verbatim
                   flac-subframe-fixed
